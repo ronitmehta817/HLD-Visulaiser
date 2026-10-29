@@ -1,5 +1,7 @@
 // Kafka Lab server: HTTP helpers, AI grading, HTML views, API routes and startup. Run with `node server.js`.
+// Netlify imports createApp() from netlify/functions/site.js and does not run the listener below.
 
+import { existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -1104,10 +1106,20 @@ function registerInterview(router, app) {
 }
 
 // ================================================================ app
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const SOURCE_ROOT = path.dirname(fileURLToPath(import.meta.url));
+
+// The directory that contains public/. Locally that is this folder. On Netlify the
+// function bundle is elsewhere, and the static files are copied in beside it.
+function staticRoot() {
+  const candidates = [SOURCE_ROOT, process.cwd(), process.env.LAMBDA_TASK_ROOT].filter(Boolean);
+  for (const dir of candidates) {
+    if (existsSync(path.join(dir, 'public', 'app.js'))) return dir;
+  }
+  return SOURCE_ROOT;
+}
 
 // Reads KEY=value lines from a .env file into process.env, if the file exists.
-function loadEnv(file = path.join(ROOT, '.env')) {
+export function loadEnv(file = path.join(SOURCE_ROOT, '.env')) {
   try {
     process.loadEnvFile(file);
     return true;
@@ -1118,7 +1130,7 @@ function loadEnv(file = path.join(ROOT, '.env')) {
 }
 
 // The server keeps no state: every request carries what it needs.
-function createApp({ env = process.env, quiet = false } = {}) {
+export function createApp({ env = process.env, quiet = false } = {}) {
   const app = { ai: createAi(env) };
 
   const router = new Router();
@@ -1131,7 +1143,7 @@ function createApp({ env = process.env, quiet = false } = {}) {
     const pathname = url.pathname;
     try {
       if (req.method === 'GET' || req.method === 'HEAD') {
-        if (/^\/(app\.js|app\.css|engine\.js)$/.test(pathname) && await serveStatic(req, res, path.join(ROOT, 'public'), pathname.slice(1))) return;
+        if (/^\/(app\.js|app\.css|engine\.js)$/.test(pathname) && await serveStatic(req, res, path.join(staticRoot(), 'public'), pathname.slice(1))) return;
       }
       const match = router.match(req.method, pathname);
       if (!match) throw new HttpError(404, 'That page does not exist.');
@@ -1158,33 +1170,39 @@ function createApp({ env = process.env, quiet = false } = {}) {
 }
 
 // ================================================================ index
-loadEnv();
+// Runs only for `node server.js`. The Netlify function is site.js, so this stays
+// off when that bundle loads this module.
+function startServer() {
+  loadEnv();
 
-const port = Number(process.env.PORT) || 3100;
-const host = process.env.HOST || '127.0.0.1';
-const { handle, app } = createApp();
+  const port = Number(process.env.PORT) || 3100;
+  const host = process.env.HOST || '127.0.0.1';
+  const { handle, app } = createApp();
 
-const server = http.createServer((req, res) => {
-  handle(req, res);
-});
+  const server = http.createServer((req, res) => {
+    handle(req, res);
+  });
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${port} is already in use. Try another one, for example: PORT=${port + 1} npm start`);
-    process.exit(1);
-  }
-  throw err;
-});
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use. Try another one, for example: PORT=${port + 1} npm start`);
+      process.exit(1);
+    }
+    throw err;
+  });
 
-server.listen(port, host, () => {
-  const shown = host === '127.0.0.1' ? 'localhost' : host;
-  console.log(`Kafka Lab is running. Open http://${shown}:${port}`);
-  console.log(`Interview answers are graded by ${app.ai.provider}.`);
-});
+  server.listen(port, host, () => {
+    const shown = host === '127.0.0.1' ? 'localhost' : host;
+    console.log(`Kafka Lab is running. Open http://${shown}:${port}`);
+    console.log(`Interview answers are graded by ${app.ai.provider}.`);
+  });
 
-const shutdown = () => {
-  server.close(() => process.exit(0));
-  server.closeAllConnections();
-};
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+  const shutdown = () => {
+    server.close(() => process.exit(0));
+    server.closeAllConnections();
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+if (process.argv[1] && path.basename(process.argv[1]) === 'server.js') startServer();
