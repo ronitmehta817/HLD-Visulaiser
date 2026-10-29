@@ -1,0 +1,17 @@
+# Pages and /api/* are served by netlify/functions/site.js.
+# public/ is the publish directory, so the browser files are static.
+# If this folder is not the root of the Git repository, set the Netlify
+# base directory to Learning/kafka-lab. Leave any build command in the
+# Netlify UI alone: this file overrides it.
+
+[build]
+  command = "node --version"
+  publish = "public"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  included_files = ["public/**"]
