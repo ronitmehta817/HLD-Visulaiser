@@ -1,0 +1,14 @@
+{
+  "name": "kafka-lab",
+  "version": "1.0.0",
+  "description": "Learn system design and Apache Kafka by building on a canvas, pushing simulated traffic through it, and seeing what breaks.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  }
+}
